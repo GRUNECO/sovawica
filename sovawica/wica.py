@@ -85,7 +85,7 @@ def wnoisest(coeff):
         stdc[i] = (np.median(np.absolute(coeff[i])))/0.6745
     return stdc
 
-def w_ica_epoch(signal,axis=-1): 
+def W_ICA_epoch(signal,axis=-1): 
     """
     Applies wavelet filtering to continuous data (ie a single epoch).
 
@@ -101,6 +101,8 @@ def w_ica_epoch(signal,axis=-1):
         wnoisest matlab wavelet function by M. Misiti, Y. Misiti, G. Oppenheim, J.M. Poggi 12-Mar-96.
     """
     LL = int(np.floor(np.log2(len(signal)))) # define the number of levels
+    if LL>6:
+      LL=6
     #print(LL) # giving level 11 currently
     # Wavelet decomposition of x.
     coeff = pywt.wavedec(signal, 'db6', level=LL,axis=axis) #was fixed to level = 8
@@ -112,7 +114,7 @@ def w_ica_epoch(signal,axis=-1):
     x_filt = np.squeeze(signal - x_rec)
     return x_filt
 
-def removeStrongArtifacts_wden(ica_segmented,components,k=4):
+def removeStrongArtifacts_wden(ica_segmented,components,k=4,mode='sigma'):
     """
         Removes strong artifacts of epoched-data using wavelet filtering.
 
@@ -123,50 +125,68 @@ def removeStrongArtifacts_wden(ica_segmented,components,k=4):
                 list/1D-array of components to filter numbered from 0 and as integers
             k : float, default: 4
                 Tolerance for cleaning artifacts (ie 1,1.15,4)
+            mode: 'sigma'|'iqr'
         Returns:
             tuple of numpy.ndarray objects
                 filtered signal , vector of filtered components (1|YES,0|NO)
     """
     (sources,samples,epochs) = ica_segmented.shape
-    #ica_return = np.copy(ica_segmented)
-    opt = np.zeros((1,len(components)))
-    print('Wavelet Component Filtering:' + str(len(components)))
+    ica_return = np.copy(ica_segmented)
+    opt = np.zeros((ica_segmented.shape[0],epochs))
+    
+    #print('Wavelet Component Filtering:' + str(len(components)))
     for comp in components:
         # Slice to component
-        Y = ica_segmented[comp,:,:]
-        Y = np.reshape(Y,(1,samples*epochs),order='F')
+        Y = ica_segmented[comp,:,:] # obtenemos los datos la componente
+        Y = np.reshape(Y,(1,samples*epochs),order='F') # pasamos esto a un vector continuo
         
         # select noisy epochs for cleaning given the component
-        sig = np.median(np.divide(np.abs(Y),0.6745))
-        thr = k*sig#1*sig#4*sig
-        idx = np.where(np.abs(Y)>thr)
-        if not(idx):
+        sig = np.median(np.divide(np.abs(Y),0.6745)) # determinamos sigma
+        q3, q1 = np.percentile(np.abs(Y), [75 ,25]) # percentiles
+        iqr = q3 - q1 # rango intercuartil
+        #k=iqr
+        if mode == 'sigma':
+          thr = k*sig #1*sig#4*sig # umbral de corte
+        elif mode == 'iqr':
+          thr = q3+1.5*iqr
+        idx = np.where(np.abs(Y)>thr) # idx = muestras (indices) donde se incumple el umbral
+        if (idx[0].shape[0]==0):
             #disp(['The component #' num2str(Comp(c)) ' has passed unchaneged']);
-            #print('The component' + str(comp) has passed unchanged)
-            pass
+            print('The component' + str(comp) ,'has passed unchanged')
+            continue 
         else:
             #$if the component is noisy try to detect the bad epoch and
             #%reconstruct
             for epoch in range(epochs):
-                Y = ica_segmented[comp,:,epoch]
-                idx = np.where(np.abs(Y)>thr)
-                if not(idx):
-                    pass
+                Y = ica_segmented[comp,:,epoch] # shape= todos los puntos de una sola epoca
+                idx = np.where(np.abs(Y)>thr) # idx = punto de la epoca donde el umbral se incumple
+                if (idx[0].shape[0]==0):
+                    continue 
                 else:
                     # Filter wavelet
-                    xn = w_ica_epoch(Y)
-                    opt[0,comp] = 1
-                    ica_segmented[comp,:,epoch] = xn
+                    xn =  W_ICA_epoch(Y)
+                    #print(np.sum(xn - Y))
+                    opt[comp,epoch] = 1
+                    ica_return[comp,:,epoch] = xn
+                    '''
+                    plt.subplot(3,1,1)
+                    plt.plot(xn)
+                    plt.subplot(3,1,2)
+                    plt.plot(Y)
+                    plt.subplot(3,1,3)
+                    plt.plot(xn - Y)
+                    plt.show()
+                    '''
                     # the print below actually makes the algorithm a lot slower
                     #print('The component #' + str(comp) + ' has been filtered in the epoch #' + str(epoch))
         #print('The component #' + str(comp) + ' has been filtered')
         #print(str((comp+1)*100/len(components)) + '%', end = ' ')
-        print(comp,end=' ')
-    print('WICA DONE')
-    return ica_segmented,opt
+        #print(comp,end=' ')
+    #print('WICA DONE')
+    return ica_return,opt
 
-def w_ica_matlab(ica_segmented,components,k=4):
-    """
-    Wrapper function of removeStrongArtifacts_wden.
-    """
-    return removeStrongArtifacts_wden(ica_segmented,components,k)
+def w_ica_matlab(ica_segmented,components,k=4,mode='sigma'):
+  """
+  Wrapper function of removeStrongArtifacts_wden.
+  """
+  return removeStrongArtifacts_wden(ica_segmented,components,k,mode)
