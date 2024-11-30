@@ -3,7 +3,7 @@
 Third-party installation:
 
 ```
-pip install git+https://github.com/GRUNECO/sovawica.git
+pip install git+https://gitfront.io/r/GRUNECO/wxGJCAdfu8wr/sovawica.git
 ```
 
 For installation on developer mode use (inside the root folder):
